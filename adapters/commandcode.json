@@ -1,0 +1,88 @@
+{
+  "id": "commandcode",
+  "enabled": true,
+  "transport": "http",
+  "endpoint": "https://api.commandcode.ai/alpha/generate",
+  "method": "POST",
+  "auth": {
+    "type": "bearer",
+    "credential_ref": "commandcode.env:COMMANDCODE_API_KEY"
+  },
+  "headers": {
+    "Content-Type": "application/json",
+    "x-command-code-version": "0.38.2",
+    "x-session-id": "{{uuid}}"
+  },
+  "request_template": {
+    "memory": "",
+    "params": {
+      "model": "{{model}}",
+      "messages": "{{messages}}",
+      "maxOutputTokens": "{{max_tokens}}",
+      "temperature": "{{temperature}}"
+    },
+    "config": {
+      "workingDir": "/home/ubuntu",
+      "date": "{{now_iso}}",
+      "environment": "linux-x64, Node.js v22.12.0",
+      "structure": [],
+      "isGitRepo": false,
+      "currentBranch": "",
+      "mainBranch": "",
+      "gitStatus": "",
+      "recentCommits": []
+    }
+  },
+  "response": {
+    "format": "ndjson",
+    "text_event": {
+      "match_field": "type",
+      "match_value": "text-delta",
+      "text_field": "text"
+    },
+    "reasoning_event": {
+      "match_field": "type",
+      "match_value": "reasoning-delta",
+      "text_field": "text"
+    },
+    "error_event": {
+      "match_field": "type",
+      "match_value": "error",
+      "text_field": "error.message"
+    },
+    "usage_event": {
+      "match_field": "type",
+      "match_value": "finish",
+      "input_field": "totalUsage.inputTokens",
+      "output_field": "totalUsage.outputTokens"
+    }
+  },
+  "models": [
+    {
+      "id": "moonshotai/Kimi-K2.7-Code-Highspeed",
+      "priority": 1
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "priority": 2
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "priority": 3
+    }
+  ],
+  "probe": {
+    "prompt": "reply with exactly: PONG",
+    "expect_contains": "PONG"
+  },
+  "_meta": {
+    "created": "2026-06-19",
+    "notes": "first adapter, debugged manually: config.date required, version 0.38.2, x-session-id per req"
+  },
+  "message_transform": {
+    "merge_system_into_first_user": true,
+    "system_prefix": "[System context]\n",
+    "system_join": "\n---\n",
+    "system_suffix": "\n[End system context]\n\n"
+  }
+}

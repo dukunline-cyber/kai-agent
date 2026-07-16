@@ -1,0 +1,187 @@
+#!/bin/bash
+# self_heal.sh - Kai Self-Healing Monitor
+# Runs every 5 minutes via systemd timer
+# Silent when healthy, alerts + auto-fixes when not
+
+BOT_TOKEN="$(grep TELEGRAM_BOT_TOKEN /home/ubuntu/ai-agent/.env | cut -d= -f2)"
+CHAT_ID="5698128340"
+LOG_FILE="/home/ubuntu/ai-agent/data/self_heal.log"
+STATE_FILE="/home/ubuntu/ai-agent/data/heal_state.json"
+ALERT_COOLDOWN=3600  # 1 hour between same alerts
+
+# --- Helpers ---
+
+log() {
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $1" >> "$LOG_FILE"
+}
+
+send_alert() {
+    local msg="$1"
+    local alert_key="$2"
+    
+    # Check cooldown
+    if [ -f "$STATE_FILE" ]; then
+        local last_alert=$(python3 -c "
+import json, sys
+try:
+    s = json.load(open('$STATE_FILE'))
+    print(s.get('alerts', {}).get('$alert_key', 0))
+except: print(0)
+" 2>/dev/null)
+        local now=$(date +%s)
+        if [ $((now - last_alert)) -lt $ALERT_COOLDOWN ]; then
+            log "ALERT COOLDOWN: $alert_key (skip)"
+            return
+        fi
+    fi
+    
+    # Send
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="$CHAT_ID" \
+        -d text="$msg" > /dev/null 2>&1
+    
+    # Update cooldown state
+    python3 -c "
+import json, time
+from pathlib import Path
+p = Path('$STATE_FILE')
+s = json.loads(p.read_text()) if p.exists() else {}
+s.setdefault('alerts', {})['$alert_key'] = int(time.time())
+p.write_text(json.dumps(s, indent=2))
+" 2>/dev/null
+    
+    log "ALERT SENT: $alert_key"
+}
+
+issues=""
+fixes=""
+
+# --- CHECK 1: Kai Process ---
+
+kai_pid=$(systemctl show kai-bot -p MainPID --value 2>/dev/null)
+kai_active=$(systemctl is-active kai-bot 2>/dev/null)
+
+if [ "$kai_active" != "active" ]; then
+    log "CHECK1: kai-bot not active ($kai_active), restarting"
+    sudo systemctl restart kai-bot
+    sleep 5
+    if systemctl is-active kai-bot > /dev/null 2>&1; then
+        fixes="${fixes}kai-bot was down, restarted OK\n"
+    else
+        issues="${issues}kai-bot failed to restart\n"
+    fi
+else
+    # Check if stuck — only restart if process is truly dead/zombie
+    # (heartbeat logger in telegram_agent.py logs every 2min, but we dont rely on it)
+    if [ -n "$kai_pid" ] && [ "$kai_pid" != "0" ] && kill -0 "$kai_pid" 2>/dev/null; then
+        # Process alive and responding to signals — healthy, skip
+        :
+    else
+        # PID not responding — truly stuck
+        log "CHECK1: kai-bot PID not responding, restarting"
+        sudo systemctl restart kai-bot
+        sleep 5
+        fixes="${fixes}kai-bot was dead/zombie, restarted\n"
+    fi
+    
+    # Check memory
+    if [ -n "$kai_pid" ] && [ "$kai_pid" != "0" ]; then
+        kai_mem_kb=$(ps -p "$kai_pid" -o rss= 2>/dev/null | tr -d ' ')
+        if [ -n "$kai_mem_kb" ] && [ "$kai_mem_kb" -gt 4000000 ]; then
+            # >4GB, kill zombie children first
+            log "CHECK1: kai memory ${kai_mem_kb}KB, killing zombies"
+            pkill -f "Xvfb :99" 2>/dev/null
+            pkill -f "chrome" 2>/dev/null
+            sleep 2
+            # Re-check
+            kai_mem_kb=$(ps -p "$kai_pid" -o rss= 2>/dev/null | tr -d ' ')
+            if [ -n "$kai_mem_kb" ] && [ "$kai_mem_kb" -gt 4000000 ]; then
+                sudo systemctl restart kai-bot
+                fixes="${fixes}kai memory too high (${kai_mem_kb}KB), restarted\n"
+            else
+                fixes="${fixes}kai memory high, killed zombie procs\n"
+            fi
+        fi
+    fi
+fi
+
+# --- CHECK 2: 9Router ---
+
+router_status=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 http://127.0.0.1:20128/ 2>/dev/null)
+if [ "$router_status" = "000" ]; then
+    log "CHECK2: 9router not responding, restarting"
+    sudo systemctl restart 9router
+    sleep 5
+    router_retry=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 http://127.0.0.1:20128/ 2>/dev/null)
+    if [ "$router_retry" != "000" ]; then
+        fixes="${fixes}9router was down, restarted OK\n"
+    else
+        issues="${issues}9router failed to restart\n"
+    fi
+fi
+
+# --- CHECK 3: Tunnels ---
+
+for svc in kai-cf 9router-tunnel soul-preview-tunnel; do
+    if ! systemctl is-active "$svc" > /dev/null 2>&1; then
+        log "CHECK3: $svc not active, restarting"
+        sudo systemctl restart "$svc"
+        sleep 3
+        if systemctl is-active "$svc" > /dev/null 2>&1; then
+            fixes="${fixes}${svc} was down, restarted\n"
+        else
+            issues="${issues}${svc} failed to restart\n"
+        fi
+    fi
+done
+
+# --- CHECK 4: Disk & RAM ---
+
+disk_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
+if [ "$disk_pct" -gt 90 ]; then
+    log "CHECK4: disk at ${disk_pct}%, cleaning /tmp"
+    rm -rf /tmp/puppeteer_dev_profile-* /tmp/org.chromium.Chromium.scoped_dir.* 2>/dev/null
+    new_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
+    fixes="${fixes}disk was ${disk_pct}%, cleaned tmp, now ${new_pct}%\n"
+fi
+
+ram_avail_mb=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+if [ "$ram_avail_mb" -lt 500 ]; then
+    log "CHECK4: RAM low (${ram_avail_mb}MB available), killing zombies"
+    pkill -f "Xvfb :99" 2>/dev/null
+    pkill -f "puppeteer" 2>/dev/null
+    pkill -f "chrome.*headless" 2>/dev/null
+    rm -rf /tmp/puppeteer_dev_profile-* /tmp/org.chromium.Chromium.scoped_dir.* 2>/dev/null
+    sleep 2
+    ram_avail_mb=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+    fixes="${fixes}RAM was critical, cleaned zombies+tmp, now ${ram_avail_mb}MB available\n"
+fi
+
+# --- CHECK 5: Crash Loop Detection ---
+
+restart_count=$(journalctl -u kai-bot --since "10 min ago" --no-pager 2>/dev/null | grep -c "Started kai-bot.service")
+if [ "$restart_count" -gt 3 ]; then
+    log "CHECK5: crash loop detected ($restart_count restarts in 10min), STOPPING"
+    sudo systemctl stop kai-bot
+    issues="${issues}CRASH LOOP: kai-bot restarted ${restart_count}x in 10min, SERVICE STOPPED\n"
+fi
+
+# --- REPORT ---
+
+if [ -n "$issues" ]; then
+    msg=$(printf "🔴 Self-Heal FAILED — manual intervention needed:\n\n%b" "$issues")
+    [ -n "$fixes" ] && msg=$(printf "%s\n\nAuto-fixed:\n%b" "$msg" "$fixes")
+    send_alert "$msg" "issues"
+    log "RESULT: issues found"
+elif [ -n "$fixes" ]; then
+    msg=$(printf "⚠️ Self-Heal Report:\n\n%b\nAll services healthy now." "$fixes")
+    send_alert "$msg" "fixes"
+    log "RESULT: auto-fixed"
+else
+    log "RESULT: all healthy"
+fi
+
+# Trim log file (keep last 500 lines)
+if [ -f "$LOG_FILE" ]; then
+    tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi

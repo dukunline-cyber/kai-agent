@@ -1,0 +1,26 @@
+Kai Telegram agent layout (post-monolith split)
+
+Entry
+  telegram_agent.py     thin entry -> kai_core.app.main()
+  systemd: kai-bot.service WorkingDirectory=/home/ubuntu/ai-agent
+
+kai_core/
+  config.py             env, paths, OpenAI clients, mutable globals
+  db.py                 SQLite kai.db
+  memory_ops.py         soul/creds, redact, memory/history helpers
+  prompt.py             build_system_prompt (SOUL + mem0 + lessons)
+  agent_loop.py         web_search, tool parse, ask_ai / ask_ai_agentic
+  shell_tools.py        local bash + remote SSH + natural aws/remote
+  media_tools.py        pdf/docx/xlsx/pptx extract, image/pdf gen, video frames
+  telegram_util.py      split_message, safe_send, send_ai_results
+  security.py           is_allowed, update_env, get_available_models
+  oracle.py             OCI oracle war helpers
+  app.py                Application wiring (handlers registration)
+
+kai_handlers/
+  all_handlers.py       all CommandHandler/MessageHandler callbacks
+
+Backup monolith
+  telegram_agent.py.bak.monolith_*  full pre-split file
+
+Behavior: same as before; first pass = physical module split, not deep redesign.

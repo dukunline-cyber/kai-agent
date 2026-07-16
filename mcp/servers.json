@@ -1,0 +1,44 @@
+{
+  "filesystem": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "/home/ubuntu/ai-agent/mcp/sandbox"
+    ],
+    "description": "Baca/tulis file dalam sandbox dir"
+  },
+  "github": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-github"
+    ],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "REDACTED"
+    },
+    "description": "GitHub: repo, issue, PR, code search"
+  },
+  "notion": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@notionhq/notion-mcp-server"
+    ],
+    "env": {
+      "OPENAPI_MCP_HEADERS": "REDACTED"
+    },
+    "description": "Notion: baca/tulis page, database, block"
+  },
+  "windows-agent": {
+    "url": "http://100.115.31.66:8000/mcp",
+    "description": "windows-agent remote (via tailnet): shell, files, gui, browser"
+  },
+  "google": {
+    "command": "google-workspace-mcp",
+    "args": [
+      "serve"
+    ],
+    "description": "Google Workspace: Docs, Sheets, Drive, Gmail, Calendar, Slides, Forms"
+  }
+}

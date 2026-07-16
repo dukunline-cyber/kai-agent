@@ -1,0 +1,5 @@
+cloakbrowser>=0.3      # stealth core (default); auto-downloads the patched Chromium binary
+# cloakbrowser[geoip]  # add the [geoip] extra if you use StealthConfig(geoip=True)
+playwright>=1.40       # only needed for BrowserConfig(cloaking=False) fallback
+anthropic>=0.40        # optional, only for agent.py decide_with_claude
+# extension sourcing (folder/.crx/Web Store) uses stdlib only — no extra deps

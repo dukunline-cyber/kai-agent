@@ -1,0 +1,105 @@
+# Credentials & secrets
+.env
+.env.*
+*.pem
+*.key
+credentials/
+**/credentials/
+**/*.env
+**/*.pem
+**/*.key
+**/secrets/
+
+# Sessions & tokens
+*.session
+**/*session*
+*token*
+**/*token*
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+**/*.db
+**/*.sqlite
+
+# Virtual environments
+venv/
+.venv/
+**/venv/
+**/.venv/
+pswigger-venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Large data dirs
+downloads/
+data/
+logs/
+backups/
+output/
+generated/
+drafts/
+sandbox/
+memory/
+mem0/
+obsidian_vault/
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+*.bak
+**/*.bak
+SOUL.md.backup-*
+**/*.backup-*
+
+# Misc
+.netlify/
+.wrangler/
+.archive/
+skills-backup-*/
+cc_*.csv
+*.log
+**/*.log
+*.pdf
+*.png
+*.drawio
+accounts.db
+ipa_search_session.session
+light-saber/
+
+# Nested git repos
+light-saber/
+pentest-arsenal/
+
+# Extra dirs not needed
+superagent-v7/
+htb/
+pswigger/
+ctf/
+bughunt/
+recon/
+projects/
+qoder-accounts/
+qoder-native/
+qoder-shim/
+reffarm-rhf/
+redteam_agents/
+tester/
+hermes-bridge/
+path/
+knowledge/
+references/
+*.txt
+C:Usersteguh*
